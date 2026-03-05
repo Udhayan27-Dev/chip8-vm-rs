@@ -1,3 +1,7 @@
+use std::fs::File;
+use std::io::Read;
+use std::path::Display;
+
 pub struct Chip8{
     memory:[u8;4096], //4KB memory
     registers:[u8;16], //V0 - VF registers
@@ -42,8 +46,73 @@ impl Chip8{
         opcode
     }
     
-    fn execute(&mut self,opcode:u16){
-        match opcode & 0x
+    fn execute(&mut self,opcode: u16){
+        let x = ((opcode & 0x0F00) >> 8)as usize;
+        let y = ((opcode & 0x00F0) >> 4)as usize;
+        let nnn = opcode & 0x0FFF;
+        let nn = (opcode & 0x00FF)as u8;
+        let n = (opcode & 0x000F)as u8 ;
+        
+        match opcode & 0xF000 {
+            0x0000 => match opcode {
+                0x00E0 => self.display = [[0;64];32],
+                0x00EE => {
+                    self.sp -= 1;
+                    self.pc = self.stack[self.sp as usize];
+                }
+                _ => (),
+            },
+            0x1000 => self.pc = nnn,
+            0x2000 => {
+                self.stack[self.sp as usize] = self.pc;
+                self.sp += 1;
+                self.pc = nnn;
+            }
+            0x3000 => {
+                if self.registers[x] == nn{
+                    self.pc += 2;
+                }
+            }
+            0x4000 => {
+                if self.registers[x] != nn {
+                    self.pc += 2;
+                }                
+            }
+            0x6000 => self.registers[x] = nn,
+            0x7000 => {
+                self.registers[x] = self.registers[x].wrapping_add(nn);
+            }
+            
+            //register math operation
+            0x8000 => match opcode & 0x000F{
+                //0 - 4 add operations
+                0x0000 => self.registers[x] = self.registers[y],
+                0x0001 => self.registers[x] |=  self.registers[y],
+                0x0002 => self.registers[x] &= self.registers[y],
+                0x0003 => self.registers[x] ^= self.registers[y],
+                0x0004 => {
+                    //add with carry
+                    let (val, overflow) = self.registers[x].overflowing_add(self.registers[y]);
+                    self.registers[x] = val;                    
+                    self.registers[0xF] = if overflow {1} else {0};
+                }
+                //5 & 7 sub operations
+                0x0005 => {
+                    let(val,borrow) = self.registers[x].overflowing_sub(self.registers[y]);
+                   self.registers[x] = val;
+                   self.registers[0xF] = if !borrow {1} else{0};
+                }
+                0x0007 => {
+                    let (val,borrow) = self.registers[y].overflowing_sub(self.registers[x]);
+                    self.registers[x] = val;
+                    self.registers[0xF] = if !borrow {1} else {0};
+                }
+                _ => println!("Sub-opcode not implemented"),
+            }
+            
+            _ => println!("Opcode {:04X} not implemented yet",opcode),
+        }
+        
     }
     
    
