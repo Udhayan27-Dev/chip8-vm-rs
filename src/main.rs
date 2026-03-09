@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::Display;
+use rand::Rng;
 
 pub struct Chip8{
     memory:[u8;4096], //4KB memory
@@ -130,11 +131,41 @@ impl Chip8{
                 self.i = nnn;
             }
             0xB000 => {
-                self.pc = nnn +self.registres[0] as u16;
+                self.pc = nnn + self.registers[0] as u16;
+            }
+            0xC000 => {
+                let random_byte : u8 = rand::thread_rng().gen();
+                self.registers[x] = random_byte & nn;
+            }
+            0xD000 => {
+                let x = self.registers[x] as usize % 64;
+                let y = self.registers[y] as usize % 32;
+                let height = n as usize;
+                
+                self.registers[0x0F] = 0;
+                
+                for row in 0..height {
+                    let sprite_byte = self.memory[(self.i + row as u16)as usize];
+                    for col in 0..8 {
+                        let sprite_pixel = (sprite_byte >> (7-col )) & 0x01;
+                        let screen_x = (x + col) % 64;
+                        let screen_y = (y + row) % 32;
+                        
+                        if sprite_pixel == 1{
+                            if self.display[screen_y][screen_x] == 1{
+                                self.registers[0x0F] = 1;
+                            }
+                            self.display[screen_y][screen_x] ^= 1;
+                        }
+                    }
+                }
             }
             
             _ => println!("Opcode {:04X} not implemented yet",opcode),
+            
+            
         }
+        
         
     }
     
