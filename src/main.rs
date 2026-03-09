@@ -84,13 +84,14 @@ impl Chip8{
             }
             
             //register math operation
-            0x8000 => match opcode & 0x000F{
+            0x8000 => match opcode & 0x000F
+            {
                 //0 - 4 add operations
                 0x0000 => self.registers[x] = self.registers[y],
                 0x0001 => self.registers[x] |=  self.registers[y],
                 0x0002 => self.registers[x] &= self.registers[y],
                 0x0003 => self.registers[x] ^= self.registers[y],
-                0x0004 => {
+                0x0004 => {             
                     //add with carry
                     let (val, overflow) = self.registers[x].overflowing_add(self.registers[y]);
                     self.registers[x] = val;                    
@@ -99,15 +100,37 @@ impl Chip8{
                 //5 & 7 sub operations
                 0x0005 => {
                     let(val,borrow) = self.registers[x].overflowing_sub(self.registers[y]);
-                   self.registers[x] = val;
-                   self.registers[0xF] = if !borrow {1} else{0};
+                    self.registers[x] = val;
+                    self.registers[0xF] = if !borrow {1} else{0};
                 }
                 0x0007 => {
                     let (val,borrow) = self.registers[y].overflowing_sub(self.registers[x]);
                     self.registers[x] = val;
                     self.registers[0xF] = if !borrow {1} else {0};
                 }
+                0x0006 => {
+                    //8XY6 -Right shift by 1 bit
+                    self.registers[0xF] = self.registers[x] & 0x01;
+                    self.registers[x] >>= 1;
+                }
+                0x000E => {
+                    self.registers[0xF] =( self.registers[x] & 0x80) >> 7;
+                    self.registers[x] <<= 1;
+                }
+                
                 _ => println!("Sub-opcode not implemented"),
+            }
+            0x9000 => {
+                if self.registers[x] != self.registers[y] 
+                {
+                    self.pc += 2;
+                }
+            }
+            0xA000 => {
+                self.i = nnn;
+            }
+            0xB000 => {
+                self.pc = nnn +self.registres[0] as u16;
             }
             
             _ => println!("Opcode {:04X} not implemented yet",opcode),
