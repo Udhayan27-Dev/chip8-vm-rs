@@ -63,23 +63,23 @@ impl Chip8{
                 }
                 _ => (),
             },
-            0x1000 => self.pc = nnn,
-            0x2000 => {
+            0x1000 => self.pc = nnn, //JUMP instruction
+            0x2000 => { //JUMP and FALLBACK
                 self.stack[self.sp as usize] = self.pc;
                 self.sp += 1;
-                self.pc = nnn;
+                self.pc = nnn; // after completion call the 00EE -> which move to the original position
             }
-            0x3000 => {
+            0x3000 => { //if value is equal, in register skip and move to next instruction eg: 300A
                 if self.registers[x] == nn{
                     self.pc += 2;
                 }
             }
-            0x4000 => {
+            0x4000 => { //if value is !equal, in register skip and move to next instruction eg: 400C
                 if self.registers[x] != nn {
                     self.pc += 2;
                 }                
             }
-            0x6000 => self.registers[x] = nn,
+            0x6000 => self.registers[x] = nn, //set register value eg:6522 register[5] = 34(0X22)
             0x7000 => {
                 self.registers[x] = self.registers[x].wrapping_add(nn);
             }
@@ -128,13 +128,15 @@ impl Chip8{
                 }
             }
             0xA000 => {
+                //sets index register to nnn address
                 self.i = nnn;
             }
             0xB000 => {
+                //jumps to the nnn + the register
                 self.pc = nnn + self.registers[0] as u16;
             }
             0xC000 => {
-                let random_byte : u8 = rand::thread_rng().gen();
+                let random_byte : u8 = rand::thread_rng().gen_range(0..255);
                 self.registers[x] = random_byte & nn;
             }
             0xD000 => {
@@ -160,17 +162,26 @@ impl Chip8{
                     }
                 }
             }
+            0xE000 => match opcode & 0x00FF{
+                0x009E => {
+                    let key = self.registers[x] as usize;
+                    if self.keypad[key]{
+                        self.pc += 2;
+                    }
+                }
+                0x00A1 => {
+                    let key = self.registers[x] as usize;
+                    if !self.keypad[key]{
+                        self.pc += 2;
+                    }
+                }
+                _ => (),
+            }
             
-            _ => println!("Opcode {:04X} not implemented yet",opcode),
             
-            
-        }
-        
-        
-    }
-    
-   
-    
+            _ => println!("Opcode {:04X} not implemented yet",opcode),                 
+        }        
+    }     
 }
 
 fn main(){
