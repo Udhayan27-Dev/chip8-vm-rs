@@ -1,62 +1,118 @@
+use rand::Rng;
 use std::fs::File;
 use std::io::Read;
-use std::path::Display;
-use rand::Rng;
+use minifb::{Key,Window,WindowOptions,Scale};
+use std::time::{Duration,Instant};
 
-pub struct Chip8{
-    memory:[u8;4096], //4KB memory
-    registers:[u8;16], //V0 - VF registers
-    i:u16,
-    pc:u16,
+const FONTSET: [u8; 80] = [
+    0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+    0x20, 0x60, 0x20, 0x20, 0x70, // 1
+    0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+    0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+    0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+    0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+    0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+    0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+    0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+    0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+    0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+    0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+    0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+    0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+    0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+    0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+];
+
+pub struct Chip8 {
+    memory: [u8; 4096],  //4KB memory
+    registers: [u8; 16], //V0 - VF registers
+    i: u16,
+    pc: u16,
     stack: [u16; 16],
     sp: u8,
-    delay_timer:u8,
-    sound_timer: u8,    
-    display: [[u8;64]; 32],
-    keypad: [bool;16],
+    delay_timer: u8,
+    sound_timer: u8,
+    display: [[u8; 64]; 32],
+    keypad: [bool; 16],
 }
 
-impl Chip8{
-    pub fn new() -> Self{
-        Self{
-            memory:[0;4096],
-            registers:[0;16],
-            i:0,
-            pc:0x200,
-            stack:[0;16],
-            sp:0,
-            delay_timer:0,
-            sound_timer:0,
-            display:[[0;64]; 32],
-            keypad:[false;16],
+impl Chip8 {
+    pub fn new() -> Self {
+        let mut chip8 = Self {
+            memory: [0; 4096],
+            registers: [0; 16],
+            i: 0,
+            pc: 0x200,
+            stack: [0; 16],
+            sp: 0,
+            delay_timer: 0,
+            sound_timer: 0,
+            display: [[0; 64]; 32],
+            keypad: [false; 16],
+        };
+        
+        for i in 0..FONTSET.len(){
+            chip8.memory[i] = FONTSET[i];
         }
+        
+        chip8
+        
     }
-    
-    pub fn cycle(&mut self){
+
+    pub fn cycle(&mut self) {
         let opcode = self.fetch();
         self.execute(opcode);
     }
     
-    fn fetch(&mut self) ->u16{
-        let high_byte = self.memory[self.pc as usize]as u16;
-        let low_byte = self.memory[(self.pc + 1) as usize] as u16;
+    pub fn load_rom(&mut self, path: &str){
+        //checks for the ROM file
+        let mut file = File::open(path).expect("Error: could not find ROM file");
+        let mut buffer = Vec::new();
         
-        let opcode = (high_byte << 8) | low_byte;
-        self.pc +=2;
+        //reads entire file into the buffer
+        file.read_to_end(&mut buffer).expect("Error: COuld not read ROM data");
         
-        opcode
+        //copies the buffer into the memory starting at 0x200
+        for(i,&byte) in buffer.iter().enumerate(){
+            if(0x200 + i) < 4096 {
+                self.memory[0x200 + i] = byte; 
+            }
+        }
     }
     
-    fn execute(&mut self,opcode: u16){
-        let x = ((opcode & 0x0F00) >> 8)as usize;
-        let y = ((opcode & 0x00F0) >> 4)as usize;
-        let nnn = opcode & 0x0FFF;
-        let nn = (opcode & 0x00FF)as u8;
-        let n = (opcode & 0x000F)as u8 ;
+    pub fn tick_timers(&mut self){
+        if self.delay_timer > 0{
+            self.delay_timer -= 1;
+        }
         
+        if self.sound_timer > 0{
+            if self.sound_timer == 1{
+                println!("BEEP!");
+            }
+            self.sound_timer -= 1;
+        }
+    }
+
+    fn fetch(&mut self) -> u16 {
+        let high_byte = self.memory[self.pc as usize] as u16;
+        let low_byte = self.memory[(self.pc + 1) as usize] as u16;
+
+        let opcode = (high_byte << 8) | low_byte;
+        self.pc += 2;
+
+        opcode
+    }
+
+    fn execute(&mut self, opcode: u16) {
+        let x = ((opcode & 0x0F00) >> 8) as usize;
+        let y = ((opcode & 0x00F0) >> 4) as usize;
+        let nnn = opcode & 0x0FFF;
+        let nn = (opcode & 0x00FF) as u8;
+        let n = (opcode & 0x000F) as u8;
+
         match opcode & 0xF000 {
             0x0000 => match opcode {
-                0x00E0 => self.display = [[0;64];32],
+                0x00E0 => self.display = [[0; 64]; 32],
                 0x00EE => {
                     self.sp -= 1;
                     self.pc = self.stack[self.sp as usize];
@@ -64,50 +120,52 @@ impl Chip8{
                 _ => (),
             },
             0x1000 => self.pc = nnn, //JUMP instruction
-            0x2000 => { //JUMP and FALLBACK
+            0x2000 => {
+                //JUMP and FALLBACK
                 self.stack[self.sp as usize] = self.pc;
                 self.sp += 1;
                 self.pc = nnn; // after completion call the 00EE -> which move to the original position
             }
-            0x3000 => { //if value is equal, in register skip and move to next instruction eg: 300A
-                if self.registers[x] == nn{
+            0x3000 => {
+                //if value is equal, in register skip and move to next instruction eg: 300A
+                if self.registers[x] == nn {
                     self.pc += 2;
                 }
             }
-            0x4000 => { //if value is !equal, in register skip and move to next instruction eg: 400C
+            0x4000 => {
+                //if value is !equal, in register skip and move to next instruction eg: 400C
                 if self.registers[x] != nn {
                     self.pc += 2;
-                }                
+                }
             }
             0x6000 => self.registers[x] = nn, //set register value eg:6522 register[5] = 34(0X22)
             0x7000 => {
                 self.registers[x] = self.registers[x].wrapping_add(nn);
             }
-            
+
             //register math operation
-            0x8000 => match opcode & 0x000F
-            {
+            0x8000 => match opcode & 0x000F {
                 //0 - 4 add operations
                 0x0000 => self.registers[x] = self.registers[y],
-                0x0001 => self.registers[x] |=  self.registers[y],
+                0x0001 => self.registers[x] |= self.registers[y],
                 0x0002 => self.registers[x] &= self.registers[y],
                 0x0003 => self.registers[x] ^= self.registers[y],
-                0x0004 => {             
+                0x0004 => {
                     //add with carry
                     let (val, overflow) = self.registers[x].overflowing_add(self.registers[y]);
-                    self.registers[x] = val;                    
-                    self.registers[0xF] = if overflow {1} else {0};
+                    self.registers[x] = val;
+                    self.registers[0xF] = if overflow { 1 } else { 0 };
                 }
                 //5 & 7 sub operations
                 0x0005 => {
-                    let(val,borrow) = self.registers[x].overflowing_sub(self.registers[y]);
+                    let (val, borrow) = self.registers[x].overflowing_sub(self.registers[y]);
                     self.registers[x] = val;
-                    self.registers[0xF] = if !borrow {1} else{0};
+                    self.registers[0xF] = if !borrow { 1 } else { 0 };
                 }
                 0x0007 => {
-                    let (val,borrow) = self.registers[y].overflowing_sub(self.registers[x]);
+                    let (val, borrow) = self.registers[y].overflowing_sub(self.registers[x]);
                     self.registers[x] = val;
-                    self.registers[0xF] = if !borrow {1} else {0};
+                    self.registers[0xF] = if !borrow { 1 } else { 0 };
                 }
                 0x0006 => {
                     //8XY6 -Right shift by 1 bit
@@ -115,15 +173,14 @@ impl Chip8{
                     self.registers[x] >>= 1;
                 }
                 0x000E => {
-                    self.registers[0xF] =( self.registers[x] & 0x80) >> 7;
+                    self.registers[0xF] = (self.registers[x] & 0x80) >> 7;
                     self.registers[x] <<= 1;
                 }
-                
+
                 _ => println!("Sub-opcode not implemented"),
-            }
+            },
             0x9000 => {
-                if self.registers[x] != self.registers[y] 
-                {
+                if self.registers[x] != self.registers[y] {
                     self.pc += 2;
                 }
             }
@@ -136,25 +193,25 @@ impl Chip8{
                 self.pc = nnn + self.registers[0] as u16;
             }
             0xC000 => {
-                let random_byte : u8 = rand::thread_rng().gen_range(0..255);
+                let random_byte: u8 = rand::thread_rng().gen_range(0..=255);
                 self.registers[x] = random_byte & nn;
             }
             0xD000 => {
                 let x = self.registers[x] as usize % 64;
                 let y = self.registers[y] as usize % 32;
                 let height = n as usize;
-                
+
                 self.registers[0x0F] = 0;
-                
+
                 for row in 0..height {
-                    let sprite_byte = self.memory[(self.i + row as u16)as usize];
+                    let sprite_byte = self.memory[(self.i + row as u16) as usize];
                     for col in 0..8 {
-                        let sprite_pixel = (sprite_byte >> (7-col )) & 0x01;
+                        let sprite_pixel = (sprite_byte >> (7 - col)) & 0x01;
                         let screen_x = (x + col) % 64;
                         let screen_y = (y + row) % 32;
-                        
-                        if sprite_pixel == 1{
-                            if self.display[screen_y][screen_x] == 1{
+
+                        if sprite_pixel == 1 {
+                            if self.display[screen_y][screen_x] == 1 {
                                 self.registers[0x0F] = 1;
                             }
                             self.display[screen_y][screen_x] ^= 1;
@@ -162,29 +219,127 @@ impl Chip8{
                     }
                 }
             }
-            0xE000 => match opcode & 0x00FF{
+            0xE000 => match opcode & 0x00FF {
                 0x009E => {
+                    // skip if pressed
                     let key = self.registers[x] as usize;
-                    if self.keypad[key]{
+                    if self.keypad[key] {
                         self.pc += 2;
                     }
                 }
                 0x00A1 => {
                     let key = self.registers[x] as usize;
-                    if !self.keypad[key]{
+                    if !self.keypad[key] {
                         self.pc += 2;
                     }
                 }
                 _ => (),
+            },
+            0xF000 => match opcode & 0x00FF {
+                0x0007 => self.registers[x] = self.delay_timer,
+                0x0015 => self.delay_timer = self.registers[x],
+                0x0018 => self.sound_timer = self.registers[x],
+                0x000A => {
+                    let mut pressed = false;
+                    for i in 0..16 {
+                        if self.keypad[i] {
+                            self.registers[x] = i as u8;
+                            pressed = true;
+                            break;
+                        }
+                    }
+                    if !pressed {
+                        self.pc -= 2;
+                    }
+                }
+
+                0x001E => self.i = self.i.wrapping_add(self.registers[x] as u16),
+                0x0029 => self.i = (self.registers[x] as u16) * 5,
+                0x0033 => {
+                    let val = self.registers[x];
+                    self.memory[self.i as usize] = val / 100;
+                    self.memory[(self.i + 1) as usize] = (val / 10) % 10;
+                    self.memory[(self.i + 2) as usize] = val % 10;
+                }
+
+                0x0055 => {
+                    for i in 0..=x {
+                        self.memory[(self.i + i as u16) as usize] = self.registers[i];
+                    }
+                }
+                0x0065 => {
+                    for i in 0..=x {
+                        self.registers[i] = self.memory[(self.i + i as u16) as usize];
+                    }
+                }
+                _ => (),
+            },
+
+            _ => println!("Opcode {:04X} not implemented yet", opcode),
+        }
+    }
+}
+
+fn main() {
+    let mut chip8 = Chip8::new();
+    
+    chip8.load_rom("pong.ch8");
+    
+    let mut window = Window::new(
+        "Rust CHIP-8 Emulator",
+        64,
+        32,
+        WindowOptions{
+            scale: Scale::X16,
+            ..WindowOptions::default()
+        },
+    ).expect("Unable to open window");
+    
+    let mut last_timer_update = Instant::now();
+    
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        let keys = window.get_keys();
+        chip8.keypad = [false; 16];
+        for key in keys {
+            match key {
+                Key::Key1 => chip8.keypad[0x1] = true,
+                Key::Key2 => chip8.keypad[0x2] = true,
+                Key::Key3 => chip8.keypad[0x3] = true,
+                Key::Key4 => chip8.keypad[0x4] = true,
+                Key::Q => chip8.keypad[0x4] = true, 
+                Key::W => chip8.keypad[0x5] = true,
+                Key::E => chip8.keypad[0x6] = true,
+                Key::R => chip8.keypad[0xD] = true,
+                Key::A => chip8.keypad[0x7] = true,
+                Key::S => chip8.keypad[0x8] = true,
+                Key::D => chip8.keypad[0x9] = true,
+                Key::F => chip8.keypad[0xE] = true,
+                Key::Z => chip8.keypad[0xA] = true,
+                Key::X => chip8.keypad[0x0] = true,
+                Key::C => chip8.keypad[0xB] = true,
+                Key::V => chip8.keypad[0xF] = true,
+                _ => (),
             }
-            
-            
-            _ => println!("Opcode {:04X} not implemented yet",opcode),                 
-        }        
-    }     
+        }
+        
+        for _ in 0..10 {
+            chip8.cycle();
+        }
+        
+        if last_timer_update.elapsed() >= Duration::from_micros(16666){
+            chip8.tick_timers();
+            last_timer_update = Instant::now();
+        }
+        
+        let mut buffer: Vec<u32> = Vec::with_capacity(64 * 32);
+        for row in chip8.display.iter(){
+            for &pixel in row.iter(){
+                let color = if pixel == 1 {0xFFFFFF} else{0x000000};
+                buffer.push(color);
+            }
+        }
+        
+        window.update_with_buffer(&buffer, 64, 32).unwrap();       
+    }  
+     
 }
-
-fn main(){
-    let chip8 = Chip8::new();
-}
-
